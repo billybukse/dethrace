@@ -6,6 +6,20 @@
 
 Dethrace is an attempt to learn how the 1997 driving/mayhem game [Carmageddon](https://en.wikipedia.org/wiki/Carmageddon) works behind the scenes and rebuild it to run natively on modern systems.
 
+## Ray tracing fork
+
+This fork adds hybrid ray tracing to the OpenGL renderer: sun shadows, ambient
+occlusion, reflections, and light from the environment (street lamps, car
+headlights and tail lights, glowing windows and neon), temporally accumulated
+and running at 60 fps. Start the game with `--raytracing`. See
+[docs/RAYTRACING.md](docs/RAYTRACING.md) for how it works and how to tune it.
+
+![Ray traced Carmageddon](docs/images/raytracing.png)
+
+Before / after:
+
+![Before and after](docs/images/raytracing-before-after.png)
+
 ## Status
 
 <img width="50%" src="https://raw.githubusercontent.com/dethrace-labs/reccmp-report/refs/heads/main/progress.svg">

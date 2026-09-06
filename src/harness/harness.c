@@ -63,6 +63,7 @@ tHarness_platform gHarness_platform;
 static int force_null_platform = 0;
 
 static int Harness_ProcessCommandLine(int* argc, char* argv[]);
+static void Harness_EnableRayTracing(void);
 static int Harness_ProcessIniFile(void);
 
 static int Harness_InitPlatform(void) {
@@ -443,6 +444,9 @@ int Harness_ProcessCommandLine(int* argc, char* argv[]) {
         } else if (strcasecmp(argv[i], "--opengl") == 0) {
             harness_game_config.opengl_3dfx_mode = 1;
             consumed = 1;
+        } else if (strcasecmp(argv[i], "--raytracing") == 0) {
+            Harness_EnableRayTracing();
+            consumed = 1;
         } else if (strcasecmp(argv[i], "--game-completed") == 0) {
             harness_game_config.game_completed = 1;
             consumed = 1;
@@ -475,6 +479,19 @@ int Harness_ProcessCommandLine(int* argc, char* argv[]) {
     return 0;
 }
 
+// Ray tracing lives in the OpenGL renderer (glrend), which cannot see the harness
+// config, so it is switched on through an environment variable it reads at start-up.
+static void Harness_EnableRayTracing(void) {
+    harness_game_config.ray_tracing = 1;
+    harness_game_config.opengl_3dfx_mode = 1;
+#ifdef _WIN32
+    _putenv_s("DETHRACE_RT", "1");
+#else
+    setenv("DETHRACE_RT", "1", 1);
+#endif
+    LOG_INFO("Ray tracing enabled (implies OpenGL mode)");
+}
+
 static int Harness_Ini_Callback(void* user, const char* section, const char* name, const char* value) {
     int i;
     float f;
@@ -502,6 +519,10 @@ static int Harness_Ini_Callback(void* user, const char* section, const char* nam
         harness_game_config.start_full_screen = (value[0] == '0');
     } else if (MATCH("General", "Emulate3DFX")) {
         harness_game_config.opengl_3dfx_mode = (value[0] == '1');
+    } else if (MATCH("General", "RayTracing")) {
+        if (value[0] == '1') {
+            Harness_EnableRayTracing();
+        }
     } else if (MATCH("General", "DefaultGame")) {
         safe_strcpy(harness_game_config.default_game, value);
     } else if (MATCH("General", "BoringMode")) {

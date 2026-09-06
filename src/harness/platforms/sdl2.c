@@ -1,6 +1,10 @@
 #include <SDL.h>
 
 #include "harness.h"
+#include <ctype.h>
+#include <stdlib.h>
+#include <string.h>
+#include <strings.h>
 #include "harness/config.h"
 #include "harness/hooks.h"
 #include "harness/trace.h"
@@ -77,6 +81,126 @@ static void* sdl2_so;
 #define FOREACH_SDLX_SYM FOREACH_SDL2_SYM
 
 #include "sdl_dyn_common.h"
+
+/*
+ * Scripted key presses for automated testing, e.g.
+ *   DETHRACE_AUTOKEYS="5:return,8:return,20:up:3"   (time[s]:key[:hold seconds])
+ * Keys are injected into the same state the game polls, so no window focus is needed.
+ */
+typedef struct tAutoKey {
+    float t_down;
+    float t_up;
+    int scancode;
+    int state; /* 0 pending, 1 held, 2 done */
+} tAutoKey;
+static tAutoKey autokeys[128];
+static int n_autokeys = 0;
+static Uint32 autokeys_start = 0;
+
+static int autokey_scancode(const char* name) {
+    static const char* rows[] = { "qwertyuiop", "asdfghjkl", "zxcvbnm" };
+    static const int row_base[] = { 0x10, 0x1E, 0x2C };
+    int i;
+    const char* pos;
+
+    if (strcasecmp(name, "return") == 0 || strcasecmp(name, "enter") == 0)
+        return 0x1C;
+    if (strcasecmp(name, "esc") == 0 || strcasecmp(name, "escape") == 0)
+        return 0x01;
+    if (strcasecmp(name, "space") == 0)
+        return 0x39;
+    if (strcasecmp(name, "up") == 0)
+        return 0xC8;
+    if (strcasecmp(name, "down") == 0)
+        return 0xD0;
+    if (strcasecmp(name, "left") == 0)
+        return 0xCB;
+    if (strcasecmp(name, "right") == 0)
+        return 0xCD;
+    if (strcasecmp(name, "tab") == 0)
+        return 0x0F;
+    if (strcasecmp(name, "backspace") == 0)
+        return 0x0E;
+    if ((name[0] == 'f' || name[0] == 'F') && name[1] >= '1' && name[1] <= '9' && name[2] == '\0')
+        return 0x3B + (name[1] - '1');
+    if (name[1] == '\0') {
+        if (name[0] >= '1' && name[0] <= '9')
+            return 0x02 + (name[0] - '1');
+        if (name[0] == '0')
+            return 0x0B;
+        for (i = 0; i < 3; i++) {
+            pos = strchr(rows[i], tolower((unsigned char)name[0]));
+            if (pos != NULL)
+                return row_base[i] + (int)(pos - rows[i]);
+        }
+    }
+    return 0;
+}
+
+static void autokeys_init(void) {
+    const char* spec = getenv("DETHRACE_AUTOKEYS");
+    char buf[2048];
+    char* tok;
+    char* save = NULL;
+
+    n_autokeys = 0;
+    if (spec == NULL || *spec == '\0')
+        return;
+    strncpy(buf, spec, sizeof(buf) - 1);
+    buf[sizeof(buf) - 1] = '\0';
+
+    for (tok = strtok_r(buf, ",", &save); tok != NULL && n_autokeys < (int)(sizeof(autokeys) / sizeof(autokeys[0])); tok = strtok_r(NULL, ",", &save)) {
+        char* c1 = strchr(tok, ':');
+        char* c2;
+        float hold = 0.15f;
+        if (c1 == NULL)
+            continue;
+        *c1++ = '\0';
+        c2 = strchr(c1, ':');
+        if (c2 != NULL) {
+            *c2++ = '\0';
+            hold = (float)atof(c2);
+        }
+        autokeys[n_autokeys].scancode = autokey_scancode(c1);
+        if (autokeys[n_autokeys].scancode == 0) {
+            LOG_WARN2("DETHRACE_AUTOKEYS: unknown key '%s'", c1);
+            continue;
+        }
+        autokeys[n_autokeys].t_down = (float)atof(tok);
+        autokeys[n_autokeys].t_up = autokeys[n_autokeys].t_down + hold;
+        autokeys[n_autokeys].state = 0;
+        n_autokeys++;
+    }
+    LOG_INFO2("DETHRACE_AUTOKEYS: %d scripted key presses", n_autokeys);
+}
+
+static void autokeys_update(void) {
+    float t;
+    int i, sc, changed = 0;
+
+    if (n_autokeys == 0)
+        return;
+    if (autokeys_start == 0)
+        autokeys_start = SDL2_GetTicks();
+    t = (float)(SDL2_GetTicks() - autokeys_start) / 1000.0f;
+
+    for (i = 0; i < n_autokeys; i++) {
+        sc = autokeys[i].scancode;
+        if (autokeys[i].state == 0 && t >= autokeys[i].t_down) {
+            key_state[sc >> 5] |= (1 << (sc & 0x1F));
+            autokeys[i].state = 1;
+            changed = 1;
+        } else if (autokeys[i].state == 1 && t >= autokeys[i].t_up) {
+            key_state[sc >> 5] &= ~(1 << (sc & 0x1F));
+            autokeys[i].state = 2;
+            changed = 1;
+        }
+    }
+    if (changed && gKeyHandler_func != NULL) {
+        gKeyHandler_func();
+    }
+}
+
 
 static void calculate_viewport(int window_width, int window_height) {
     int vp_width, vp_height;
@@ -174,6 +298,7 @@ static void SDL2_Harness_ProcessWindowMessages(void) {
             QuitGame();
         }
     }
+    autokeys_update();
 }
 
 static void SDL2_Harness_SetKeyHandler(void (*handler_func)(void)) {
@@ -324,6 +449,7 @@ static void SDL2_Harness_CreateWindow(const char* title, int width, int height, 
     }
 
     SDL2_ShowCursor(SDL_DISABLE);
+    autokeys_init();
 
     viewport.x = 0;
     viewport.y = 0;

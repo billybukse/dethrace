@@ -658,6 +658,13 @@ void PDForEveryFile(char* pThe_path, void (*pAction_routine)(char*)) {
 // IDA: void __usercall PDSetPalette(br_pixelmap *pThe_palette@<EAX>)
 // FUNCTION: CARM95 0x004a7903
 void PDSetPalette(br_pixelmap* pThe_palette) {
+    // In OpenGL mode the device palette is only used to convert 8-bit textures,
+    // which are authored against the render palette. 2D content (menus, flics)
+    // is converted with gCurrent_palette on the game side, so palettes set for
+    // it must not retint every texture (this made the world go red mid-race).
+    if (harness_game_config.opengl_3dfx_mode && gRender_palette != NULL && pThe_palette != gRender_palette) {
+        return;
+    }
     BrDevPaletteSetOld(pThe_palette);
 }
 
@@ -666,6 +673,11 @@ void PDSetPalette(br_pixelmap* pThe_palette) {
 void PDSetPaletteEntries(br_pixelmap* pPalette, int pFirst_colour, int pCount) {
     int i;
     tU8* p;
+
+    // see PDSetPalette: partial updates come from flic animations
+    if (harness_game_config.opengl_3dfx_mode && pPalette != gRender_palette) {
+        return;
+    }
 
     p = pPalette->pixels;
     p += pFirst_colour * 4;

@@ -13,6 +13,7 @@
 #include "globvrbm.h"
 #include "globvrpb.h"
 #include "grafdata.h"
+#include "harness/config.h"
 #include "harness/hooks.h"
 #include "harness/os.h"
 #include "harness/trace.h"
@@ -2037,7 +2038,10 @@ void RenderAFrame(int pDepth_mask_on) {
     for (i = 0; i < (gMap_mode && !gSmall_frames_are_slow ? 3 : 1); i++)
 #endif
     {
-        RenderShadows(gUniverse_actor, &gProgram_state.track_spec, gCamera, &gCamera_to_world);
+        // Fake blob shadows are redundant when the renderer traces real ones
+        if (!harness_game_config.ray_tracing) {
+            RenderShadows(gUniverse_actor, &gProgram_state.track_spec, gCamera, &gCamera_to_world);
+        }
         BrZbSceneRenderBegin(gUniverse_actor, gCamera, gRender_screen, gDepth_buffer);
         ProcessNonTrackActors(gRender_screen, gDepth_buffer, gCamera, &gCamera_to_world, &old_camera_matrix);
         ProcessTrack(gUniverse_actor, &gProgram_state.track_spec, gCamera, &gCamera_to_world, 0);
